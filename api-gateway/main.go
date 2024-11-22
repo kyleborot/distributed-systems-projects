@@ -1,33 +1,45 @@
 package main
 
 import (
-	"errors"
 	"fmt"
-	"io"
+	"io/ioutil"
 	"net/http"
-	"os"
+	"net/url"
 )
 
-func getRoot(w http.ResponseWriter, r *http.Request) {
-	fmt.Printf("got / request\n")
-	io.WriteString(w, "this is my website!\n")
+type Auth struct{}
+
+func (a Auth) DoLogin(body []byte, params url.Values) (string, error) {
+	if string(body) == "username=admin&password=1234" {
+		return "mocktoken123", nil
+	}
+	return "", fmt.Errorf("invalid credentials")
 }
 
-func getHello(w http.ResponseWriter, r *http.Request) {
-	fmt.Printf("got /hello request\n")
-	io.WriteString(w, "Hello HTTP!\n")
-}
+var myAuth = Auth{}
 
 func main() {
-	http.HandleFunc("/", getRoot)
-	http.HandleFunc("/hello", getHello)
+	http.HandleFunc("/login", func(res http.ResponseWriter, req *http.Request) {
+		if req.Method != "POST" {
+			http.NotFound(res, req)
+			return
+		}
+		params := req.URL.Query()
+		body, err := ioutil.ReadAll(req.Body)
+		if err != nil {
+			http.Error(res, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
+			return
+		}
+		token, err := myAuth.DoLogin(body, params)
+		if err == nil {
+			res.WriteHeader(http.StatusOK)
+			_, _ = res.Write([]byte(fmt.Sprintf("Login successful. Token: %s", token)))
+		} else {
+			res.WriteHeader(http.StatusUnauthorized)
+			_, _ = res.Write([]byte("Unauthorized"))
+		}
+	})
 
-	err := http.ListenAndServe(":3333", nil)
-
-	if errors.Is(err, http.ErrServerClosed) {
-		fmt.Printf("server closed\n")
-	} else if err != nil {
-		fmt.Printf("error starting server: %s\n", err)
-		os.Exit(1)
-	}
+	fmt.Println("Server starting on port 8080")
+	http.ListenAndServe(":8080", nil)
 }
